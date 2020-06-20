@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>FCC: Treemap Project</title>
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #title {
+      font-size: xx-large;
+      text-align: center;
+    }
+
+    #description {
+      font-size: medium;
+      text-align: center;
+    }
+
+    #vis-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #tooltip {
+      background-color: darkslategray;
+      border-radius: 6px;
+      padding: 0.5em 0.75em;
+      color: white;
+      position: absolute;
+      font-size: small;
+    }
+
+    button {
+      padding: 10px 20px;
+      border-radius: 6px;
+      background-color: lightskyblue;
+      border: none;
+    }
+
+    button:hover {
+      cursor: pointer;
+      background-color: rgb(91, 188, 248);
+    }
+
+    button:active {
+      cursor: pointer;
+      background-color: rgb(67, 180, 250);
+    }
+
+    .button-container {
+      margin: 25px auto;
+      display: flex;
+      flex-direction: row;
+      justify-content: space-evenly;
+    }
+  </style>
+  <script src="https://d3js.org/d3.v5.min.js"></script>
+  <script src="https://d3js.org/d3-geo.v1.min.js"></script>
+  <script src="https://unpkg.com/topojson@3"></script>
+</head>
+
+<body>
+  <div class="button-container">
+    <button onclick="updateVis('kickstarter');">Kickstarter pledges</button>
+    <button onclick="updateVis('movies');">Movie Sales</button>
+    <button onclick="updateVis('videogames');">Video Game Sales</button>
+  </div>
+  <script>
+    /********** DECLARATIONS **********/
+    const DATA_SETS = {
+      kickstarterPledges: {
+        url: "https://cdn.freecodecamp.org/testable-projects-fcc/data/tree_map/kickstarter-funding-data.json",
+        title: "Kickstarter Funding",
+        description: "kickstarter funding description"
+      },
+      movieSales: {
+        url: "https://cdn.freecodecamp.org/testable-projects-fcc/data/tree_map/movie-data.json",
+        title: "Movie Sales",
+        description: "movie sales description"
+      },
+      videoGameSales: {
+        url: "https://cdn.freecodecamp.org/testable-projects-fcc/data/tree_map/video-game-sales-data.json",
+        title: "Videogame Sales",
+        description: "videogame description"
+      }
+    }
+    const FCC_SCRIPT_URL = "https://cdn.freecodecamp.org/testable-projects-fcc/v1/bundle.js";
+    let margin = { top: 30, right: 30, bottom: 30, left: 60 };
+    let width = 1200 - margin.left - margin.right;
+    let height = 700 - margin.top - margin.bottom;
+    let svg, toolTip;
+
+    /* colors from https://colorbrewer2.org/ */
+    let colorArray = [
+      "#fdd49e",
+      "#fdbb84",
+      "#fc8d59",
+      "#fec44f",
+      "#fe9929",
+      "#ec7014",
+      "#ffeda0",
+      "#fed976",
+      "#feb24c",
+      "#d9f0a3",
+      "#addd8e",
+      "#78c679",
+      "#74a9cf",
+      "#3690c0",
+      "#0570b0",
+      "#ece7f2",
+      "#d0d1e6",
+      "#a6bddb",
+      "#dadaeb",
+      "#bcbddc",
+      "#9e9ac8"
+    ];
+
+    /********** FUNCTIONS **********/
+    function initialLoad() {
+      /* Add container div */
+      d3.select("body")
+        .append("div")
+        .attr("id", "vis-container");
+
+      /* Add title and description */
+      d3.select("#vis-container")
+        .append("div")
+        .attr("class", "title-block")
+        .append("div")
+        .attr("id", "title")
+        .text("United States Bachelor's Degree Dispersement");
+      d3.select(".title-block")
+        .append("div")
+        .attr("id", "description")
+        .text("");
+
+      /* Add svg */
+      svg = d3.select("#vis-container")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left}, ${margin.top})`);
+
+      /* Add tooltip */
+      toolTip = d3.select("#vis-container")
+        .append("div")
+        .attr("id", "tooltip")
+        .style("opacity", 0);
+
+      /* Add FCC Script */
+      d3.select("body")
+        .append("script")
+        .attr("src", FCC_SCRIPT_URL);
+
+      updateVis("kickstarter");
+    }
+
+    async function updateVis(graphName) {
+      let localObj, localTitle, localDesc, localUrl;
+
+      switch (graphName) {
+        case "kickstarter":
+          localObj = DATA_SETS.kickstarterPledges;
+          break;
+        case "movies":
+          localObj = DATA_SETS.movieSales;
+          break;
+        case "videogames":
+          localObj = DATA_SETS.videoGameSales;
+          break;
+      }
+
+      d3.select("#title").text(localObj.title);
+      d3.select("#description").text(localObj.description);
+
+      let data = await d3.json(localObj.url).then((data, error) => {
+        if (error) throw error;
+        return data;
+      });
+
+      let categories = data.children.map(category => {
+        return category.name;
+      });
+
+      let items = [];
+      data.children.map(category => {
+        category.children.forEach(item => {
+          item.value = parseInt(item.value);
+          items.push(item);
+        });
+      })
+
+      let root = d3.hierarchy(data).sum(d => {
+        return d.value;
+      });
+
+      d3.treemap()
+        .size([width, height])
+        .padding(1)(root);
+
+      /* remove 'rect' and 'text' blocks if they exist already */
+
+      svg.selectAll("g").remove();
+      svg.selectAll("rect").remove();
+      svg.selectAll("text").remove();
+
+      let groups = svg.selectAll("g")
+        .data(root.leaves())
+        .enter()
+        .append("g")
+        .attr("transform", d => {
+          return `translate(${d.x0}, ${d.y0})`
+        });
+
+      groups.append("rect")
+        .attr("width", d => { return d.x1 - d.x0; })
+        .attr("height", d => { return d.y1 - d.y0; })
+        .attr("class", "tile")
+        .attr("data-name", d => { return d.data.name })
+        .attr("data-category", d => { return d.data.category })
+        .attr("data-value", d => { return d.data.value })
+        .style("fill", d => {
+          let index = categories.indexOf(d.data.category);
+          return colorArray[index];
+        })
+        .style("stroke", "white")
+        .on("mousemove", d => {
+          toolTip.transition().duration(50).style("opacity", 0.9)
+          toolTip.html(`<strong>Name:</strong>&nbsp;${d.data.name}<br>
+          <strong>Category:</strong>&nbsp;${d.data.category}<br>
+          <strong>Value:</strong>&nbsp;${d.data.value}`)
+            .style("top", (d3.event.pageY - 15) + "px")
+            .style("left", (d3.event.pageX + 28) + "px")
+            .style("z-index", 5)
+            .attr("data-value", () => { return d.data.value })
+        })
+        .on("mouseout", d => {
+          toolTip.transition().style("opacity", 0);
+        });
+
+      let textFont = 8.5;
+      groups.append("text")
+        .attr("x", d => { return d.x0 + 5 })
+        .attr("y", d => { return d.y0 + 5 + textFont + "px" })
+        .style("font-size", textFont + "px")
+        .selectAll("tspan")
+        .data(d => {
+          return d.data.name.split(/\s|:/g);
+        })
+        .enter().append("tspan")
+        .attr("x", 4)
+        .attr("y", (d, i) => {
+          return 13 + (i * 10);
+        })
+        .text(d => { return d });
+
+      d3.select("#legend").remove();
+
+      let legend = d3.select("#vis-container")
+        .append("svg")
+        .attr("width", 500)
+        .attr("id", "legend");
+
+      let legendGroups = legend.selectAll("g")
+        .data(categories)
+        .enter().append("g")
+        .attr("transform", (d, i) => {
+          let xLocation = 200 * (i % 3);
+          let yLocation = 25 * Math.floor(i / 3);
+
+          return `translate(${xLocation},${yLocation})`;
+        });
+
+      legendGroups.append("rect")
+        .attr("class", "legend-item")
+        .attr("width", 18)
+        .attr("height", 18)
+        .attr("x", 0)
+        .attr("y", 0)
+        .style("fill", (d, i) => {
+          return colorArray[i];
+        });
+      legendGroups.append("text")
+        .attr("x", 22)
+        .attr("y", 15)
+        .text(d => { return d });
+    }
+    
+    initialLoad();
+  </script>
+</body>
+
+</html>
